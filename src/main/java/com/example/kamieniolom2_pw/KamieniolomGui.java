@@ -55,6 +55,7 @@ public class KamieniolomGui extends Application {
     private ExecutorService executorService;
     private Random random = new Random();
     private final Lock lock = new ReentrantLock();
+    private Lock lock2;
     private Semaphore firstBlock;
     private Semaphore secondBlock;
     private AtomicBoolean isChanged = new AtomicBoolean(false);
@@ -141,6 +142,7 @@ public class KamieniolomGui extends Application {
         executorService = Executors.newFixedThreadPool(workerSpinner.getValue());
         firstBlock = new Semaphore(workerSpinner.getValue());
         secondBlock = new Semaphore(workerSpinner.getValue());
+        lock2 = new ReentrantLock();
         combination = random.nextInt(0, 3);
         int paletteIndex = currentPaletteNumber - 1;
         tempDecisions = decisions[paletteIndex][combination];
@@ -211,13 +213,13 @@ public class KamieniolomGui extends Application {
         if (stone == 0) {
             try {
                 firstBlock.acquire();
-                lock.lock();
+                lock2.lock();
                 if (!isChanged.get()) {
                     Platform.runLater(this::resetGrid);
                     nextPaletteSetup();
                     isChanged.set(true);
                 }
-                lock.unlock();
+                lock2.unlock();
                 secondBlock.acquire();
                 isChanged.set(false);
                 firstBlock.release();
@@ -277,11 +279,13 @@ public class KamieniolomGui extends Application {
             imageView.setFitWidth(CELL_SIZE);
             imageView.setTranslateY(WINDOW_HEIGHT);
 
+//            palletGrid.add(rect, column, row + i);
             palletGrid.add(imageView, column, row + i);
             weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight);
             paletteCounter.setText("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber - 1]);
 
             Timeline timeline = new Timeline();
+//            KeyValue kv = new KeyValue(rect.translateYProperty(), 0);
             KeyValue kv = new KeyValue(imageView.translateYProperty(), 0);
             KeyFrame kf = new KeyFrame(Duration.seconds(2), kv);
             timeline.getKeyFrames().add(kf);
