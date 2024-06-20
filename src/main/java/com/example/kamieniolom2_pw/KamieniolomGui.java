@@ -55,9 +55,9 @@ public class KamieniolomGui extends Application {
     private ExecutorService executorService;
     private Random random = new Random();
     private final Lock lock = new ReentrantLock();
-    private Semaphore firstBlock;
-    private Semaphore secondBlock;
     private AtomicBoolean isChanged = new AtomicBoolean(false);
+    private CyclicBarrier cyclicBarrier1;
+    private CyclicBarrier cyclicBarrier2;
 
 
     @Override
@@ -139,8 +139,8 @@ public class KamieniolomGui extends Application {
     private void startWorkers() {
         System.out.println("Początek startWorker, interrupt: " + Thread.currentThread().isInterrupted());
         executorService = Executors.newFixedThreadPool(workerSpinner.getValue());
-        firstBlock = new Semaphore(workerSpinner.getValue());
-        secondBlock = new Semaphore(workerSpinner.getValue());
+        cyclicBarrier1 = new CyclicBarrier(workerSpinner.getValue());
+        cyclicBarrier2 = new CyclicBarrier(workerSpinner.getValue());
         combination = random.nextInt(0, 3);
         int paletteIndex = currentPaletteNumber - 1;
         tempDecisions = decisions[paletteIndex][combination];
@@ -210,19 +210,17 @@ public class KamieniolomGui extends Application {
         sleepSomeTime();
         if (stone == 0) {
             try {
-                firstBlock.acquire();
+                cyclicBarrier1.await();
                 lock.lock();
                 if (!isChanged.get()) {
-                    Platform.runLater(this::resetGrid);
+                    resetGrid();
                     nextPaletteSetup();
                     isChanged.set(true);
                 }
                 lock.unlock();
-                secondBlock.acquire();
+                cyclicBarrier2.await();
                 isChanged.set(false);
-                firstBlock.release();
-                secondBlock.release();
-            } catch (InterruptedException e) {
+            } catch (InterruptedException | BrokenBarrierException e) {
                 throw new RuntimeException(e);
             }
         }
@@ -290,16 +288,22 @@ public class KamieniolomGui extends Application {
     }
 
     private void resetGrid() {
-        palletGrid.getChildren().clear();
         for (int i = 0; i < GRID_SIZE; i++) {
             for (int j = 0; j < GRID_SIZE; j++) {
-                Pane cell = new Pane();
-                cell.setMinSize(CELL_SIZE, CELL_SIZE);
-                cell.setStyle("-fx-border-color: black;");
-                palletGrid.add(cell, j, i);
                 cellOccupied[i][j] = false;
             }
         }
+        Platform.runLater(() -> {
+            palletGrid.getChildren().clear();
+            for (int i = 0; i < GRID_SIZE; i++) {
+                for (int j = 0; j < GRID_SIZE; j++) {
+                    Pane cell = new Pane();
+                    cell.setMinSize(CELL_SIZE, CELL_SIZE);
+                    cell.setStyle("-fx-border-color: black;");
+                    palletGrid.add(cell, j, i);
+                }
+            }
+        });
     }
 
     private void nextPaletteSetup() {
@@ -308,8 +312,10 @@ public class KamieniolomGui extends Application {
             currentPaletteNumber = 1;
         }
         currentPaletteWeight = 0;
-        paletteCounter.setText("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber - 1]);
-        weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight);
+        Platform.runLater(() -> {
+            paletteCounter.setText("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber - 1]);
+            weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight);
+        });
 
         int paletteIndex = currentPaletteNumber - 1;
         combination = random.nextInt(3);  // Losujemy nową kombinację dla nowej palety
@@ -320,8 +326,8 @@ public class KamieniolomGui extends Application {
         stopWorkers();
         currentPaletteNumber = 1;
         currentPaletteWeight = 0;
+        resetGrid();
         Platform.runLater(() -> {
-            resetGrid();
             paletteCounter.setText("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber - 1]);
             weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight);
         });
