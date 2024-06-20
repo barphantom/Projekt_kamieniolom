@@ -21,9 +21,11 @@ import javafx.scene.text.Text;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
+import java.util.Arrays;
 import java.util.Random;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -35,17 +37,16 @@ public class KamieniolomGui extends Application {
     private static final int PALETTE_LIMIT = 3; // Ilość palet do napełnienia
     private boolean[][] cellOccupied = new boolean[GRID_SIZE][GRID_SIZE];
 
-
-
-    private final int[][][] decisions = {{{1, 1, 2}, {2, 2, 1}, {3, 3, 0}},
-                                         {{2, 2, 1}, {3, 3, 0}, {5, 2, 0}},
-                                         {{6, 0, 1}, {5, 2, 0}, {7, 1, 0}}
+    private final static int[][][] decisions = {
+            {{1, 1, 2}, {2, 2, 1}, {3, 3, 0}},
+            {{2, 2, 1}, {3, 3, 0}, {5, 2, 0}},
+            {{6, 0, 1}, {5, 2, 0}, {7, 1, 0}}
     };
     private int[] tempDecisions;
     private final int[] palleteMaxWeight = {14, 13, 11};
     private final int[] stoneWeight = {1, 3, 5};
-    private int currentPaletteNumber = 1;
-    private int currentPaletteWeight = 0;
+    private AtomicInteger currentPaletteNumber = new AtomicInteger(1);
+    private AtomicInteger currentPaletteWeight = new AtomicInteger(0);
     private int combination;
 
     private GridPane palletGrid;
@@ -55,10 +56,11 @@ public class KamieniolomGui extends Application {
     private ExecutorService executorService;
     private Random random = new Random();
     private final Lock lock = new ReentrantLock();
+    private Semaphore firstBlock;
+    private Semaphore secondBlock;
     private AtomicBoolean isChanged = new AtomicBoolean(false);
     private CyclicBarrier cyclicBarrier1;
     private CyclicBarrier cyclicBarrier2;
-
 
     @Override
     public void start(Stage stage) {
@@ -67,7 +69,6 @@ public class KamieniolomGui extends Application {
         stage.setScene(scene);
         stage.show();
     }
-
 
     private Scene createScene() {
         HBox root = new HBox(20);
@@ -86,11 +87,10 @@ public class KamieniolomGui extends Application {
                         BackgroundSize.DEFAULT.getHeight(),
                         true,   // Szerokość w procentach
                         true,   // Wysokość w procentach
-                        false,   // Zachować proporcje
-                        true)  // Dopasować do kontenera
+                        false,  // Zachować proporcje
+                        true)   // Dopasować do kontenera
         );
         root.setBackground(new Background(background));
-
 
         // Tworzenie siatki reprezentującej paletę
         palletGrid = new GridPane();
@@ -108,9 +108,9 @@ public class KamieniolomGui extends Application {
         }
 
         // Tekst wyświetlający numer aktualnej palety
-        paletteCounter = new Text("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber -1]);
+        paletteCounter = new Text("Paleta: " + currentPaletteNumber.get() + ", max waga: " + palleteMaxWeight[currentPaletteNumber.get() - 1]);
         paletteCounter.setStyle("-fx-font-size: 16px;");
-        weightCounter = new Text("Aktualna waga palety: " + currentPaletteWeight);
+        weightCounter = new Text("Aktualna waga palety: " + currentPaletteWeight.get());
         weightCounter.setStyle("-fx-font-size: 16px;");
 
         // Ustawienia liczby pracowników
@@ -139,11 +139,13 @@ public class KamieniolomGui extends Application {
     private void startWorkers() {
         System.out.println("Początek startWorker, interrupt: " + Thread.currentThread().isInterrupted());
         executorService = Executors.newFixedThreadPool(workerSpinner.getValue());
+        firstBlock = new Semaphore(workerSpinner.getValue());
+        secondBlock = new Semaphore(workerSpinner.getValue());
         cyclicBarrier1 = new CyclicBarrier(workerSpinner.getValue());
         cyclicBarrier2 = new CyclicBarrier(workerSpinner.getValue());
         combination = random.nextInt(0, 3);
-        int paletteIndex = currentPaletteNumber - 1;
-        tempDecisions = decisions[paletteIndex][combination];
+        int paletteIndex = currentPaletteNumber.get() - 1;
+        tempDecisions = decisions[paletteIndex][combination].clone();
 
         Runnable worker = () -> {
             while (!Thread.currentThread().isInterrupted()) {
@@ -156,9 +158,7 @@ public class KamieniolomGui extends Application {
 
         for (int i = 0; i < workerSpinner.getValue(); i++) {
             executorService.execute(worker);
-//            executorService.submit(worker);
         }
-
     }
 
     private void sleepSomeTime() {
@@ -166,7 +166,6 @@ public class KamieniolomGui extends Application {
             Thread.sleep(1000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-//            System.out.println("Złapałem interrupta!");
         }
     }
 
@@ -199,10 +198,9 @@ public class KamieniolomGui extends Application {
             int row = info[0];
             int column = info[1];
             if (stone > 0) {
-                currentPaletteWeight += stoneWeight[stone - 1];
+                currentPaletteWeight.addAndGet(stoneWeight[stone - 1]);
                 Platform.runLater(() -> addStone(row, column, stone, color));
             }
-//            System.out.println("Kamień: " + stone + "rząd: " + row + ", kolumna: " + column);
         } finally {
             lock.unlock();
         }
@@ -213,8 +211,8 @@ public class KamieniolomGui extends Application {
                 cyclicBarrier1.await();
                 lock.lock();
                 if (!isChanged.get()) {
-                    resetGrid();
                     nextPaletteSetup();
+                    resetGrid();
                     isChanged.set(true);
                 }
                 lock.unlock();
@@ -224,7 +222,6 @@ public class KamieniolomGui extends Application {
                 throw new RuntimeException(e);
             }
         }
-
     }
 
     private int getStoneNumber() {
@@ -246,7 +243,7 @@ public class KamieniolomGui extends Application {
         outerLoop:
         for (int i = 0; i < cellOccupied.length; i++) {
             for (int j = 0; j < cellOccupied.length; j++) {
-                if (!cellOccupied[i][j] && (3-i >= stoneLength)) {
+                if (!cellOccupied[i][j] && (3 - i >= stoneLength)) {
                     row = i;
                     column = j;
                     break outerLoop;
@@ -276,8 +273,8 @@ public class KamieniolomGui extends Application {
             imageView.setTranslateY(WINDOW_HEIGHT);
 
             palletGrid.add(imageView, column, row + i);
-            weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight);
-            paletteCounter.setText("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber - 1]);
+            weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight.get());
+            paletteCounter.setText("Paleta: " + currentPaletteNumber.get() + ", max waga: " + palleteMaxWeight[currentPaletteNumber.get() - 1]);
 
             Timeline timeline = new Timeline();
             KeyValue kv = new KeyValue(imageView.translateYProperty(), 0);
@@ -307,29 +304,34 @@ public class KamieniolomGui extends Application {
     }
 
     private void nextPaletteSetup() {
-        currentPaletteNumber++;
-        if (currentPaletteNumber > PALETTE_LIMIT) {
-            currentPaletteNumber = 1;
+        currentPaletteNumber.incrementAndGet();
+        if (currentPaletteNumber.get() > PALETTE_LIMIT) {
+            currentPaletteNumber.set(1);
         }
-        currentPaletteWeight = 0;
+        currentPaletteWeight.set(0);
         Platform.runLater(() -> {
-            paletteCounter.setText("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber - 1]);
-            weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight);
+            paletteCounter.setText("Paleta: " + currentPaletteNumber.get() + ", max waga: " + palleteMaxWeight[currentPaletteNumber.get() - 1]);
+            weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight.get());
         });
 
-        int paletteIndex = currentPaletteNumber - 1;
-        combination = random.nextInt(3);  // Losujemy nową kombinację dla nowej palety
-        tempDecisions = decisions[paletteIndex][combination];
+        int paletteIndex = currentPaletteNumber.get() - 1;
+//        System.out.println("Uzyskany indeks palety: " + paletteIndex);
+        combination = random.nextInt(0, 3);  // Losujemy nową kombinację dla nowej palety
+//        System.out.println("Wylosowana kombinacja: " + combination);
+        tempDecisions = decisions[paletteIndex][combination].clone();
+//        System.out.println("Oryginał cały: " + Arrays.deepToString(decisions));
+//        System.out.println("Oryginał: " + Arrays.toString(decisions[paletteIndex][combination]));
+//        System.out.println("W temp: " + Arrays.toString(tempDecisions));
     }
 
     private void resetButton() {
         stopWorkers();
-        currentPaletteNumber = 1;
-        currentPaletteWeight = 0;
+        currentPaletteNumber.set(1);
+        currentPaletteWeight.set(0);
         resetGrid();
         Platform.runLater(() -> {
-            paletteCounter.setText("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber - 1]);
-            weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight);
+            paletteCounter.setText("Paleta: " + currentPaletteNumber.get() + ", max waga: " + palleteMaxWeight[currentPaletteNumber.get() - 1]);
+            weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight.get());
         });
         stopWorkers();
     }
@@ -337,6 +339,4 @@ public class KamieniolomGui extends Application {
     public static void main(String[] args) {
         launch();
     }
-
 }
-
