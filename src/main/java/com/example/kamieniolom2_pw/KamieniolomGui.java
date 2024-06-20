@@ -12,10 +12,9 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
-import javafx.scene.layout.GridPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Pane;
-import javafx.scene.layout.VBox;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
@@ -75,8 +74,26 @@ public class KamieniolomGui extends Application {
         root.setPadding(new Insets(20));
         root.setAlignment(Pos.CENTER_LEFT);
 
-        // Tworzenie siatki reprezentującej paletę
+        Image backgroundImage = new Image(getClass().getResourceAsStream("quarryOpacity2.png"));
+        ImageView backgroundImageView = new ImageView(backgroundImage);
+        backgroundImageView.setOpacity(0.7);
+        BackgroundImage background = new BackgroundImage(
+                backgroundImage,
+                BackgroundRepeat.NO_REPEAT,  // Powtarzanie obrazka w poziomie
+                BackgroundRepeat.NO_REPEAT,  // Powtarzanie obrazka w pionie
+                BackgroundPosition.DEFAULT,  // Pozycja obrazka
+                new BackgroundSize(
+                        BackgroundSize.DEFAULT.getWidth(),
+                        BackgroundSize.DEFAULT.getHeight(),
+                        true,   // Szerokość w procentach
+                        true,   // Wysokość w procentach
+                        false,   // Zachować proporcje
+                        true)  // Dopasować do kontenera
+        );
+        root.setBackground(new Background(background));
 
+
+        // Tworzenie siatki reprezentującej paletę
         palletGrid = new GridPane();
         palletGrid.setPadding(new Insets(10));
         palletGrid.setHgap(10);
@@ -187,7 +204,6 @@ public class KamieniolomGui extends Application {
                 Platform.runLater(() -> addStone(row, column, stone, color));
             }
 //            System.out.println("Kamień: " + stone + "rząd: " + row + ", kolumna: " + column);
-
         } finally {
             lock.unlock();
         }
@@ -211,10 +227,6 @@ public class KamieniolomGui extends Application {
                 throw new RuntimeException(e);
             }
         }
-//        } else {
-//            sleepSomeTime();
-//            sleepSomeTime();
-//        }
 
     }
 
@@ -256,12 +268,22 @@ public class KamieniolomGui extends Application {
             Rectangle rect = new Rectangle(CELL_SIZE, CELL_SIZE);
             rect.setFill(color);
             rect.setTranslateY(WINDOW_HEIGHT);
-            palletGrid.add(rect, column, row + i);
+
+            ImageView imageView = new ImageView(
+                    new Image(
+                            getClass().getResourceAsStream("rock.png")
+                    )
+            );
+            imageView.setFitHeight(CELL_SIZE);
+            imageView.setFitWidth(CELL_SIZE);
+            imageView.setTranslateY(WINDOW_HEIGHT);
+
+            palletGrid.add(imageView, column, row + i);
             weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight);
             paletteCounter.setText("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber - 1]);
 
             Timeline timeline = new Timeline();
-            KeyValue kv = new KeyValue(rect.translateYProperty(), 0);
+            KeyValue kv = new KeyValue(imageView.translateYProperty(), 0);
             KeyFrame kf = new KeyFrame(Duration.seconds(2), kv);
             timeline.getKeyFrames().add(kf);
             timeline.play();
