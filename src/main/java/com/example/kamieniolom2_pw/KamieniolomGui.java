@@ -23,8 +23,10 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 
 import java.util.Random;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -56,6 +58,7 @@ public class KamieniolomGui extends Application {
     private ExecutorService executorService;
     private Random random = new Random();
     private final Lock lock = new ReentrantLock();
+    private final CountDownLatch signalFullPalette = new CountDownLatch(3);
 
 
 
@@ -119,6 +122,7 @@ public class KamieniolomGui extends Application {
     }
 
     private void startWorkers() {
+        System.out.println("Początek startWorker, interrupt: " + Thread.currentThread().isInterrupted());
         executorService = Executors.newFixedThreadPool(workerSpinner.getValue());
         combination = random.nextInt(0, 3);
         int paletteIndex = currentPaletteNumber - 1;
@@ -126,14 +130,18 @@ public class KamieniolomGui extends Application {
 
         Runnable worker = () -> {
             while (!Thread.currentThread().isInterrupted()) {
+                System.out.println("Wykonuję pętlę, wątek: " + Thread.currentThread().getName());
                 addStoneToPalette();
-                sleepSomeTime();    //
+                sleepSomeTime();
             }
+            System.out.println("Wyszedłem z pętli.");
         };
 
         for (int i = 0; i < workerSpinner.getValue(); i++) {
             executorService.execute(worker);
+//            executorService.submit(worker);
         }
+
     }
 
     private void sleepSomeTime() {
@@ -141,6 +149,7 @@ public class KamieniolomGui extends Application {
             Thread.sleep(1000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+//            System.out.println("Złapałem interrupta!");
         }
     }
 
@@ -174,13 +183,18 @@ public class KamieniolomGui extends Application {
             int column = info[1];
             if (stone > 0) {
                 currentPaletteWeight += stoneWeight[stone - 1];
+                Platform.runLater(() -> addStone(row, column, stone, color, lock));
             } else {
-                currentPaletteWeight = 0;
-//                pauseBeforeReset(); // do wywalenia
+                signalFullPalette.countDown();
             }
-            Platform.runLater(() -> addStone(row, column, stone, color));
         } finally {
             lock.unlock();
+        }
+        sleepSomeTime();
+        sleepSomeTime();
+        if (signalFullPalette.getCount() == 0) {
+            Platform.runLater(this::resetGrid);
+            nextPaletteSetup();
         }
     }
 
@@ -217,7 +231,7 @@ public class KamieniolomGui extends Application {
         return new int[]{row, column};
     }
 
-    private void addStone(int row, int column, int length, Color color) {
+    private void addStone(int row, int column, int length, Color color, Lock lock) {
         for (int i = 0; i < length; i++) {
             Rectangle rect = new Rectangle(CELL_SIZE, CELL_SIZE);
             rect.setFill(color);
@@ -230,8 +244,8 @@ public class KamieniolomGui extends Application {
             KeyValue kv = new KeyValue(rect.translateYProperty(), 0);
             KeyFrame kf = new KeyFrame(Duration.seconds(2), kv);
             timeline.getKeyFrames().add(kf);
+//            timeline.setOnFinished(e -> lock.unlock());
             timeline.play();
-
         }
     }
 
@@ -264,11 +278,14 @@ public class KamieniolomGui extends Application {
 
     private void resetButton() {
         stopWorkers();
-        resetGrid();
         currentPaletteNumber = 1;
         currentPaletteWeight = 0;
-        paletteCounter.setText("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber - 1]);
-        weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight);
+        Platform.runLater(() -> {
+            resetGrid();
+            paletteCounter.setText("Paleta: " + currentPaletteNumber + ", max waga: " + palleteMaxWeight[currentPaletteNumber - 1]);
+            weightCounter.setText("Aktualna waga palety: " + currentPaletteWeight);
+        });
+        stopWorkers();
     }
 
     public static void main(String[] args) {
