@@ -75,8 +75,7 @@ public class KamieniolomGui extends Application {
         root.setAlignment(Pos.CENTER_LEFT);
 
         Image backgroundImage = new Image(getClass().getResourceAsStream("quarryOpacity2.png"));
-        ImageView backgroundImageView = new ImageView(backgroundImage);
-        backgroundImageView.setOpacity(0.7);
+
         BackgroundImage background = new BackgroundImage(
                 backgroundImage,
                 BackgroundRepeat.NO_REPEAT,  // Powtarzanie obrazka w poziomie
