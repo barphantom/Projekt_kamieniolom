@@ -23,10 +23,8 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 
 import java.util.Random;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -58,8 +56,9 @@ public class KamieniolomGui extends Application {
     private ExecutorService executorService;
     private Random random = new Random();
     private final Lock lock = new ReentrantLock();
-    private final CountDownLatch signalFullPalette = new CountDownLatch(3);
-
+    private Semaphore firstBlock;
+    private Semaphore secondBlock;
+    private AtomicBoolean isChanged = new AtomicBoolean(false);
 
 
     @Override
@@ -124,6 +123,8 @@ public class KamieniolomGui extends Application {
     private void startWorkers() {
         System.out.println("Początek startWorker, interrupt: " + Thread.currentThread().isInterrupted());
         executorService = Executors.newFixedThreadPool(workerSpinner.getValue());
+        firstBlock = new Semaphore(workerSpinner.getValue());
+        secondBlock = new Semaphore(workerSpinner.getValue());
         combination = random.nextInt(0, 3);
         int paletteIndex = currentPaletteNumber - 1;
         tempDecisions = decisions[paletteIndex][combination];
@@ -161,8 +162,8 @@ public class KamieniolomGui extends Application {
 
     private void addStoneToPalette() {
         lock.lock();
+        int stone = getStoneNumber();
         try {
-            int stone = getStoneNumber();
             Color color;
             switch (stone) {
                 case 1:
@@ -183,19 +184,38 @@ public class KamieniolomGui extends Application {
             int column = info[1];
             if (stone > 0) {
                 currentPaletteWeight += stoneWeight[stone - 1];
-                Platform.runLater(() -> addStone(row, column, stone, color, lock));
-            } else {
-                signalFullPalette.countDown();
+                Platform.runLater(() -> addStone(row, column, stone, color));
             }
+//            System.out.println("Kamień: " + stone + "rząd: " + row + ", kolumna: " + column);
+
         } finally {
             lock.unlock();
         }
         sleepSomeTime();
         sleepSomeTime();
-        if (signalFullPalette.getCount() == 0) {
-            Platform.runLater(this::resetGrid);
-            nextPaletteSetup();
+        if (stone == 0) {
+            try {
+                firstBlock.acquire();
+                lock.lock();
+                if (!isChanged.get()) {
+                    Platform.runLater(this::resetGrid);
+                    nextPaletteSetup();
+                    isChanged.set(true);
+                }
+                lock.unlock();
+                secondBlock.acquire();
+                isChanged.set(false);
+                firstBlock.release();
+                secondBlock.release();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
         }
+//        } else {
+//            sleepSomeTime();
+//            sleepSomeTime();
+//        }
+
     }
 
     private int getStoneNumber() {
@@ -231,7 +251,7 @@ public class KamieniolomGui extends Application {
         return new int[]{row, column};
     }
 
-    private void addStone(int row, int column, int length, Color color, Lock lock) {
+    private void addStone(int row, int column, int length, Color color) {
         for (int i = 0; i < length; i++) {
             Rectangle rect = new Rectangle(CELL_SIZE, CELL_SIZE);
             rect.setFill(color);
@@ -244,7 +264,6 @@ public class KamieniolomGui extends Application {
             KeyValue kv = new KeyValue(rect.translateYProperty(), 0);
             KeyFrame kf = new KeyFrame(Duration.seconds(2), kv);
             timeline.getKeyFrames().add(kf);
-//            timeline.setOnFinished(e -> lock.unlock());
             timeline.play();
         }
     }
